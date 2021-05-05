@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "django_i18n"
+version = "0.1.0"
+description = "I18n in Django."
+authors = ["idealism-xxm"]
+license = "GPL-3.0"
+
+repository = "https://github.com/idealism-xxm/i18n-demos/django"
+homepage = "https://github.com/idealism-xxm/i18n-demos/django"
+
+[tool.poetry.dependencies]
+python = "^3.8"
+Django = "^3.2.1"
+
+[tool.poetry.dev-dependencies]
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
