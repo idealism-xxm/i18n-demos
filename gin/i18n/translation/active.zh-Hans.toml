@@ -1,0 +1,7 @@
+[CurrentLanguage]
+description = "显示当前请求语言"
+other = "当前语言：{{.curLang}}"
+
+[MyCats]
+description = "我有 n 只猫"
+other = "我有 <<.count>> 只猫。"
