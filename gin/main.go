@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"net/http"
 
@@ -16,11 +17,14 @@ func startGinServer() {
 	r.Use(i18n.GinMiddleware())
 
 	r.GET("/hello/:username/", func(c *gin.Context) {
-		name := c.Param("username")
-		currentLanguage := i18n.CurrentLanguage(c.Request.Context(), name)
-		myCats := i18n.MyCats(c.Request.Context(), 1)
-		myCats += i18n.MyCats(c.Request.Context(), 2)
-		c.String(http.StatusOK, currentLanguage+myCats)
+		// 获取路径中的 username
+		username := c.Param("username")
+		// 从 context 中获取 languageTag
+		langaugeTag := i18n.LanguageTagFromContext(c.Request.Context())
+		currentLanguage := i18n.CurrentLanguage(c.Request.Context(), langaugeTag.String())
+		personCat := i18n.PersonCats(c.Request.Context(), username, 1)
+		personCats := i18n.PersonCats(c.Request.Context(), username, 2)
+		c.String(http.StatusOK, fmt.Sprintf("%v\n%v\n%v", currentLanguage, personCat, personCats))
 	})
 
 	if err := r.Run(); err != nil {
