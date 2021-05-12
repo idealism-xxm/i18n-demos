@@ -9,142 +9,202 @@ Gin 本身不包含国际化和本地化相关的功能，需要通过其他的�
 go-i18n 有以下特点：
 
 - 支持 200 多中语言及单复数
+  - 复合 [CLDR 复数规则](https://www.unicode.org/cldr/cldr-aux/charts/28/supplemental/language_plural_rules.html)
 - 支持带命名变量的字符串，使用 [text/template](http://golang.org/pkg/text/template/) 的语法
 - 支持多种形式的翻译文件（JSON, TOML, YAML）
 
-这种方式很方便，因为不同语言下的分隔符可能有不同含义，这样新增的语言可以配置独立其他的分隔符。
-
-### 配置开启本地化
-
-默认情况下 Django 不会打开本地化，需要手动进行开启，修改 `settings.py` 文件中的如下内容（没有则添加）：
-
-```python3
-MIDDLEWARE = [
-    # 将本地化中间件放入靠前的位置
-    'django.middleware.locale.LocaleMiddleware',
-    ...
-]
-
-TEMPLATES = [
-    {
-        ...
-        'OPTIONS': {
-            'context_processors': [
-                # 如果使用的模版需要 i18n ，则需要加上该上下处理器
-                'django.template.context_processors.i18n',
-                ...
-            ],
-        },
-    },
-]
-
-# 开启 i18n 和 L10n （默认是开启的）
-USE_I18N = True
-USE_L10N = True
-
-# 设置默认语言（默认是 en-us ）
-LANGUAGE_CODE = 'en-us'
-
-# 添加翻译文件夹路径
-PROJECT_PATH = os.path.dirname(os.path.dirname(__file__))
-LOCALE_PATHS = (
-    os.path.join(PROJECT_PATH, 'locale/'),
-)
-
-# 设置支持的语言
-LANGUAGES = (('en-us', 'American English'), ('zh-hans', 'Simplified Chinese'))
-```
-
-Django 自带的本地化中间件会 [使用按照以下顺序找到本次请求本地化的语言](https://docs.djangoproject.com/en/3.2/topics/i18n/translation/#how-django-discovers-language-preference) ：
-
-- url 中的语言前缀
-- cookie 中的 `LANGUAGE_COOKIE_NAME`
-- 请求头中的 `Accept-Language`
-- 全局配置中的 `LANGUAGE_CODE`
-
-Django 在会按照以下顺序选择翻译后的字符串：
-
-- `LOCALE_PATHS` 中列出的目录（按先后顺序）
-- `INSTALLED_APPS` 中每个应用下的 `locale/` 目录（按先后顺序）
-- `django/conf/locale` 中 Django 提供的基础翻译
-- 原字符串
-
 ### 标记文本
 
-此时我们可以标记我们需要翻译的所有文本， Django 提供了以下函数帮助我们进行标记，并会在运行时自动选择对应的翻译：
+go-i18n 也支持标记文本并进行抽取，它通过定义一个 `i18n.Message` 实例进行标记，抽取后会生成相应的翻译文件。
 
-- gettext/ugettext: 将给定的字符串翻译成选择的语言
-    - 使用方式： `gettext(message)`
-- ngettext/ungettext: 支持单复数的翻译（每种语言的单复数处理逻辑可能不同，所以不要自己实现，直接使用该函数即可）
-    - 使用方式： `ngettext(singular, plural, number)`
-- pgettext: 带上下文的翻译（同一个字符串在不同上下文中有不同含义时（例如：`May` ），需要指定上下文）
-    - 使用方式：`pgettext(context, message)`
-- npgettext: 带上下文且支持单复数的翻译
-    - 使用方式：`npgettext(context, singular, plural, number)`
-
-上述每个函数都有对应的惰性函数，命名方式为 `xx_lazy` ，这使得在字符串上下文里使用字符串时，才会进行翻译。
-
-更多使用方式可以查看 [官方文档](https://docs.djangoproject.com/en/3.2/topics/i18n/translation/) 。
-
-在实际使用中，我们结合了以下使用场景和具体情况，按照特定的形式进行处理：
-
-- 这些函数仅用于标记，需要减少对源代码的干扰，所以我们会用别名的方式，例如：`_`, `_t` 等
-- 实际场景中， `_` 经常被用于忽略函数返回值，为了保持统一且便于全局搜索出使用翻译的地方，我们最终决定 `_t` 作为别名
-- 大部分情况下，我们都不需要处理单复数和上下文，所以我们都使用 `ugettext` 函数。该场景下，我们都抽取了一个常量以尽可能复用字符串，也方便后续快速修改
-
-最终使用的形式如下：
-
+```go
+var personCats = &i18n.Message{
+	// 唯一标识，用于查询某种语言下对应的翻译信息
+    ID:          "PersonCats",
+    // 该翻译的描述
+    Description: "username 有 n 只猫",
+    Other:       "<<.username>> 有 <<.count>> 只猫。",
+    // 左分隔符
+    LeftDelim:   "<<",
+    // 右分隔符
+    RightDelim:  ">>",
+}
 ```
-from django.utils.translation import ugettext as _t
 
-HELLO = '你好，{username}。'
+`i18n.Message` 定义了 Zero, One, Two, Few, Many, Other 这些字段，用于表示不同复数下的翻译串。每种语言的复数规则不一样，只需要按照对应语言的复数规则填写对应的字符串即可，没有则不需要填写。
 
-# 注意这里使用了 format ，所以不能使用惰性函数
-_t(HELLO).format(username=username)
+- 例如：汉语基本可以只填 Other 一个字段，英语可以根据需要填 One 和 Other 两个字段即可。
+
+LeftDelim 和 RightDelim 字段用于指定分隔符，当我们的文本含有默认分隔符 `{{` 或 `}}` ，可以指定避免错误。这种方式很方便，因为不同语言下的分隔符可能有不同含义，这样新增的语言可以配置独立其他的分隔符。
+
+- 注意：分隔符指定仅对当前 `i18n.Message` 生效，每种语言的每个翻译消息都会生成独立的 `i18n.Message` ，都需要进行单独配置。
+
+### 抽取文本并翻译
+
+当我们定义好时，就可以运行自带的命令行工具抽取文本了，首先需要执行以下命令进行安装：
+
+```shell
+go get -u github.com/nicksnyder/go-i18n/v2/goi18n
 ```
+
+该命令行工具提供了两个子命令可供使用：
+
+- extract: 抽取指定源文件中的文本，并生成某个语言指定格式的翻译文件 `active.*.format`
+- merge: 读取所有指定的翻译文件，并对其中每个语言生成两个文件
+  - `active.*.format`: 包含运行时需要加载的消息
+  - `translate.*.format`: 包含待翻译的消息
+
+第一个子命令很好理解，第二个子命令不太容易明白如何使用，可以通过一个简单的例子来说明如何使用两个子命令快速生成增量的待翻译文件。
+
+新增语言和新增消息其实是一样的，新增语言相当于对原本为空的翻译文件增加了全部消息。所以我们只考虑新增消息这种场景，新增语言时只需要新建一个空的翻译文件即可。
+
+#### 抽取原始数据
+
+我们选择一种实际不会使用到的语言（例如 `zh`）用于抽取翻译文件（如果源代码中所有的消息都是一种语言，当然可以直接指定为它），以便后续增量更新。
+
+```shell
+goi18n extract --sourceLanguage zh --outdir i18n/translation
+```
+
+生成文件如下：
+
+```toml
+[CurrentLanguage]
+description = "显示当前请求语言"
+other = "当前语言：{{.curLang}}"
+
+[PersonCats]
+description = "username 有 n 只猫"
+other = "<<.username>> 有 <<.count>> 只猫。"
+# 注意：目前不会生成分隔符号，需要翻译人员手动指定
+```
+
+#### 生成增量的待翻译文件
+
+假设我们原有的翻译文件如下：
+
+```toml
+# i18n/translation/active.en-US.toml
+[CurrentLanguage]
+description = "显示当前请求语言"
+other = "Current Language: <<.curLang>>"
+leftDelim = "<<"
+rightDelim = ">>"
+
+# i18n/translation/active.zh-Hans.toml
+[MyCats]
+description = "我有 n 只猫"
+other = "我有 {{.count}} 只猫。"
+```
+
+我们现在生成 `en-US` 和 `zh-Hans` 语言的增量待翻译文件（如果第一次生成，需要新建一个空白文件），可以直接运行以下命令即可：
+
+```shell
+goi18n merge --sourceLanguage zh --outdir i18n/translation i18n/translation/active.zh.toml i18n/translation/active.zh-Hans.toml i18n/translation/active.en-US.toml
+```
+
+注意：这个命令，会根据 sourceLanguage 指定的文件作为参照进行更新
+
+- 如果 `active.zh.toml` 删除了某个消息，其他所有 `active.*.toml` 都会直接删除该消息
+- 如果 `active.zh.toml` 修改了某个消息的描述，其他所有 `active.*.toml` 都会直接修改该消息的描述，不会修改翻译字符串
+- 如果 `active.zh.toml` 新增了某个消息的描述，其他所有 `translate.*.toml` 都会新增该消息，用于增量翻译
+
+生成文件如下：
+
+```toml
+# i18n/translation/active.en-US.toml
+[CurrentLanguage]
+description = "显示当前请求语言"
+hash = "sha1-bc7c9ba2dd5c4ea9d428a997a4083055752e723a"
+other = "Current Language: <<.curLang>>"
+# 注意：目前不会生成分隔符号，需要翻译人员手动指定，所以这里分隔符被删除了
+
+# i18n/translation/translate.en-US.toml
+# 新增了 en-US 的增量待翻译文件
+[PersonCats]
+description = "username 有 n 只猫"
+hash = "sha1-5001f112730310aa294aae74838fcf99c9b35467"
+other = "<<.username>> 有 <<.count>> 只猫。"
+
+# i18n/translation/active.zh-Hans.toml
+# 该文件被删除了，因为唯一的一个消息在最新的参照没有
+
+# i18n/translation/translate.zh-Hans.toml
+[CurrentLanguage]
+description = "显示当前请求语言"
+hash = "sha1-bc7c9ba2dd5c4ea9d428a997a4083055752e723a"
+other = "当前语言：{{.curLang}}"
+
+[PersonCats]
+description = "username 有 n 只猫"
+hash = "sha1-5001f112730310aa294aae74838fcf99c9b35467"
+other = "<<.username>> 有 <<.count>> 只猫。"
+```
+
+#### 增量更新翻译文件
+
+经过翻译后，增量翻译文件如下：
+
+```toml
+# i18n/translation/translate.en-US.toml
+[PersonCats]
+description = "username有 n 只猫"
+one = "<<.username>> have <<.count>> cat."
+other = "<<.username>> have <<.count>> cats."
+leftDelim = "<<"
+rightDelim = ">>"
+
+# i18n/translation/translate.zh-Hans.toml
+[CurrentLanguage]
+description = "显示当前请求语言"
+other = "当前语言：{{.curLang}}"
+
+[PersonCats]
+description = "username 有 n 只猫"
+other = "{{.username}} 有 {{.count}} 只猫。"
+```
+
+此时我们还需要在此运行 merge 子命令，将每个语言的增量翻译合并到 `active.*.toml` 中：
+
+```shell
+# 合并增量翻译，并删除增量翻译文件
+goi18n merge --sourceLanguage en-US --outdir i18n/translation i18n/translation/active.en-US.toml i18n/translation/translate.en-US.toml && rm i18n/translation/translate.en-US.toml
+# 合并增量翻译，并删除增量翻译文件
+goi18n merge --sourceLanguage zh-Hans --outdir i18n/translation  i18n/translation/translate.zh-Hans.toml && rm i18n/translation/translate.zh-Hans.toml
+```
+
+合并后翻译结果如下：
+
+```toml
+# i18n/translation/active.en-US.toml
+[CurrentLanguage]
+description = "显示当前请求语言"
+other = "Current Language: <<.curLang>>"
+
+[PersonCats]
+description = "username有 n 只猫"
+one = "<<.username>> have <<.count>> cat."
+other = "<<.username>> have <<.count>> cats."
+# 注意：目前不会生成分隔符号，合并后这里需要再次手动指定
+
+# i18n/translation/active.zh-Hans.toml
+[CurrentLanguage]
+description = "显示当前请求语言"
+other = "当前语言：{{.curLang}}"
+
+[PersonCats]
+description = "username 有 n 只猫"
+other = "{{.username}} 有 {{.count}} 只猫。"
+```
+
+目前该工具有前面提到的小问题，如果使用了自定义分隔符，可能会很容易出错。没有使用自定义分隔符时，则可以极大简化翻译流程的各项操作。
+
+不过平时使用时，后续更多得是少量增量的翻译，手动处理更新可能效率更高，或者直接使用翻译平台提供的的集成插件即可。
 
 ### 抽取文本
 
-当我们将所有需要翻译的文本用上述方法处理好后，就可以直接抽取文本了。
-
-Django 提供的 `makemessages` 可以自动抽取出我们前面标记的文本。
-
-```shell
-# 安装依赖的 gettext
-apt-get update && apt-get install -y gettext
-# 抽取文本
-python manage.py makemessages -l en_us -l zh_hans
-```
-
-运行后就会在 `locale/` 下面生成两种语言的 `django.po` 文件了，当翻译者全部翻译完成后，再放回对应的位置即可。
-
-文件内容大致如下：
-
-```
-...
-msgid "你好，{username}。"
-msgstr "Hello, {username}."
-...
-```
-
-注意：如果没有使用命令自动生成，那么很可能没有头部信息，在实际使用过程中会出现编码错误等问题，需要添加以下头部信息，完整的头部信息可以查看 [官方文档](https://www.gnu.org/software/gettext/manual/gettext.html#Header-Entry) ：
-
-```
-msgid ""
-msgstr ""
-"Content-Type: text/plain; charset=UTF-8\n"
-```
 
 ### 编译文本
-
-当我们抽取完所有文本并全部翻译后，我们就可以进行编译了，以供 Django 在运行时使用。
-
-```
-# 编译所有的 django.po 为对应的 django.mo
-python3 manage.py compilemessages
-```
-
-一般本步骤直接写在 `Dockerfile` 文件内，打包时会自动处理，本地调试时会手动运行。
 
 ### 测试
 
