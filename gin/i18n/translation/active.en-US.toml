@@ -1,8 +1,12 @@
 [CurrentLanguage]
 description = "显示当前请求语言"
 other = "Current Language: <<.curLang>>"
+leftDelim = "<<"
+rightDelim = ">>"
 
 [PersonCats]
 description = "username有 n 只猫"
 one = "<<.username>> have <<.count>> cat."
 other = "<<.username>> have <<.count>> cats."
+leftDelim = "<<"
+rightDelim = ">>"

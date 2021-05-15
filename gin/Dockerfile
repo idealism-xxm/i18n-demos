@@ -1,18 +1,20 @@
-FROM python:3.8
+FROM golang:1.15.4 as builder
 
-WORKDIR /idealism-xxm/django
+WORKDIR /idealism-xxm/gin
+ADD . .
 
-COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -v -ldflags "-s -w" -installsuffix cgo -o . ./...
 
-RUN apt-get update && \
-    apt-get install gettext -y
+FROM alpine:latest
+WORKDIR /idealism-xxm/gin
+# alpine 没有提供时区信息，需要从 builder 拷过来
+COPY --from=builder /usr/local/go/lib/time/zoneinfo.zip /opt/zoneinfo.zip
+ENV ZONEINFO /opt/zoneinfo.zip
 
-RUN pip install poetry && \
-    # disable virtual env in docker
-    poetry config virtualenvs.create false && \
-    poetry install
+# 拷贝编译后的程序
+COPY --from=builder /idealism-xxm/gin/ /idealism-xxm/gin/
+# 添加 i18n 翻译文件
+ADD i18n/translation /idealism-xxm/gin/i18n/translation
 
-# compile messages
-RUN python manage.py compilemessages
-
-CMD [ "python3.8", "manage.py", "runserver", "0.0.0.0:8000" ]
+ENTRYPOINT ["/idealism-xxm/gin/gin-i18n"]
+CMD ["run", "--logtostderr"]

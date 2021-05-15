@@ -226,7 +226,7 @@ new Intl.DateTimeFormat().resolvedOptions().timeZone
 
 ### 中间件中激活本地时区
 
-中间件实现很简单，就是获取请求头中的时区，不存在时使用全局配置中的时区；然后在当前线程中激活，待请求完毕后再清楚时区信息。
+中间件实现很简单，就是获取请求头中的时区，不存在时使用全局配置中的时区；然后在当前线程中激活，待请求完毕后再清除时区信息。
 
 ```python3
 class LocaleTimezoneMiddleware:

@@ -35,19 +35,12 @@ func init() {
 	// 2. 加载语言文件
 	bundle.RegisterUnmarshalFunc("toml", toml.Unmarshal)
 	for _, lang := range languages {
-		bundle.MustLoadMessageFile(fmt.Sprintf("%v/active.%v.toml", "/Users/idealism/Workspaces/Go/i18n-in-django-and-gin/gin/i18n/translation", lang.String()))
+		bundle.MustLoadMessageFile(fmt.Sprintf("%v/active.%v.toml", "/idealism-xxm/gin/i18n/translation", lang.String()))
 	}
 	bundleMatcher = language.NewMatcher(bundle.LanguageTags())
 
 	// 3. 初始化默认本地化的 localizer
 	defaultLocalizer = i18n.NewLocalizer(bundle, defaultLanguage.String())
-}
-
-func GetLanguage(ctx context.Context) {
-	// 1. 从 context 中获取 localizer
-	//localizer := GetLocalizer(ctx)
-	//
-	//localizer.
 }
 
 func Localize(ctx context.Context, lc *i18n.LocalizeConfig) string {
