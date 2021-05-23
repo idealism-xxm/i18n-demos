@@ -6,6 +6,8 @@ from django_i18n import settings
 from django_i18n.constants import CURRENT_LANGUAGE
 from django_i18n.constants import HELLO
 
+import grpccli.service
+
 # Create your views here.
 def hello(request, username):
     # 获取本次请求的时区
@@ -16,3 +18,6 @@ def hello(request, username):
         # timezone.now() 返回的时间时区是 settings.TIME_ZONE
         f"({cur_timezone}) {timezone.now().astimezone(cur_timezone)}"
     )
+
+def hello_with_grpc(request, username):
+    return HttpResponse(grpccli.service.hello(username))

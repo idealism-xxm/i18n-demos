@@ -15,6 +15,10 @@ ENV ZONEINFO /opt/zoneinfo.zip
 COPY --from=builder /idealism-xxm/gin/ /idealism-xxm/gin/
 # 添加 i18n 翻译文件
 ADD i18n/translation /idealism-xxm/gin/i18n/translation
+# 配置 APM 所需的环境变量
+ENV ELASTIC_APM_SERVICE_NAME gin-i18n
+ENV ELASTIC_APM_SERVER_URL http://host.docker.internal:8200
+ENV ELASTIC_APM_ENVIRONMENT local
 
 ENTRYPOINT ["/idealism-xxm/gin/gin-i18n"]
 CMD ["run", "--logtostderr"]

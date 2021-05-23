@@ -39,7 +39,23 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'elasticapm.contrib.django',
 ]
+
+ELASTIC_APM = {
+   # It's better to be different in every environment.
+   'SERVICE_NAME': 'django-i18n',
+   # ignored in local environment
+   'SECRET_TOKEN': '',
+   # set apm server url
+   # default: http://localhost:8200
+   'SERVER_URL': 'http://host.docker.internal:8200',
+   # set the environment this service is deployed in
+   'ENVIRONMENT': 'local',
+   # set DEBUT=True to capture data in Django debug mode
+   # default: False
+   'DEBUG': True,
+}
 
 MIDDLEWARE = [
     # enables language selection based on request

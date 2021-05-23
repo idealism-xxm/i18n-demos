@@ -22,4 +22,5 @@ from . import views
 urlpatterns = [
     path('admin/', admin.site.urls),
     re_path(r'hello/(?P<username>\w+)/', views.hello),
+    re_path(r'hello-with-grpc/(?P<username>\w+)/', views.hello_with_grpc),
 ]
