@@ -2,7 +2,7 @@
 
 在 [Django i18n](django/demo%20(simple%20i18n).md) 和 [Gin i18n](gin/demo%20(simple%20i18n).md) 中分别介绍了如何在 Django 和 Gin 中实现国际化和本地化，但未涉及如何实现全链路国际化和本地化。
 
-要做到全链路，就需要将对应的信息进行跨服务传递，最常见的场景就是全链路追踪。本次将介绍如何通过 gRPC 在 Python 和 Golang 的服务间传递 traceId ，从而实现全链路追踪。
+要做到全链路，就需要将对应的信息进行跨服务传递，最常见的场景就是全链路追踪。本次将介绍如何通过 gRPC 在 Python 和 Golang 的服务间传递 trace 信息，从而实现全链路追踪。
 
 ## 搭建本地 eak 环境
 
@@ -186,11 +186,11 @@ func main() {
 
 到目前为止，我们分别在 Django 和 Gin 中实现了分离的追踪，但无法在微服务场景下串起来客户端和服务端的关系，难以快速在微服务场景下进行排查。
 
-此时就需要全链路追踪技术，并且利用全链路追踪的 traceId ，我们还可以一次将一条链路上的所有日志全部拉出来。我们可以同时结合链路上的追踪记录和日志，这样极大地提高排查问题的效率，找到问题所在。
+此时就需要全链路追踪技术，并且利用全链路追踪的 trace 信息，我们还可以一次将一条链路上的所有日志全部拉出来。我们可以同时结合链路上的追踪记录和日志，这样极大地提高排查问题的效率，找到问题所在。
 
 ### 分析 Golang gRPC 的 Apm 客户端
 
-Apm 官方库已经提供了 Golang 的 gRPC 的客户端，而尚未提供 Python 的 gRPC 的客户端，所以我们先分析 Golang gRPC 的 Apm 客户端，看看是如何传递 traceId 的。
+Apm 官方库已经提供了 Golang 的 gRPC 的客户端，而尚未提供 Python 的 gRPC 的客户端，所以我们先分析 Golang gRPC 的 Apm 客户端，看看是如何传递 trace 信息的。
 
 ```go
 // go.elastic.co/apm/module/apmgrpc@v1.11.0/server.go:97
@@ -211,13 +211,13 @@ func startTransaction(ctx context.Context, tracer *apm.Tracer, name string) (*ap
 }
 ```
 
-apmgrpc 会从 grpc 的 metadata 中获取获取 trace 的相关信息，优先获取 `Elastic-Apm-Traceparent` 指定的 traceId ，没有获取到会再获取 `Traceparent` 指定的 traceId 。由于后者是 W3C 标准的请求头，所以我们决定采用 `Traceparent` 传递 traceId 。
+apmgrpc 会从 grpc 的 metadata 中获取获取 trace 的相关信息，优先获取 `Elastic-Apm-Traceparent` 指定的 trace 信息，没有获取到会再获取 `Traceparent` 指定的 trace 信息。由于后者是 W3C 标准的请求头，所以我们决定采用 `Traceparent` 传递 trace 信息。
 
 如果需要自定义其他的请求头名，可以使用 grpc_opentracing 提供的拦截器。
 
 ### gRPC-go 服务端支持 apm
 
-想要让 gRPC 的 Golang 服务端支持 apm ，我们可以直接在创建新服务端实例时添加上 apmgrpc 的拦截器即可：
+想要让 gRPC 的 Golang 服务端支持 apm ，我们可以直接在创建新服务端实例时添加上 apmgrpc 的拦截器即可，这样所有通过 grpc 进来的请求都会自动集成请求中的 trace 信息，从而将不同服务间的链路串起来。
 
 ```go
 s := grpc.NewServer(
@@ -231,7 +231,134 @@ s := grpc.NewServer(
 
 ### 编写 gRPC-python 客户端的 Apm 拦截器
 
-现在我们已经知道了需要通过 `Traceparent` 请求头传递 traceId ，那么我们可以继续编写 Python 下的 gRPC 客户端的拦截器了，在每次请求的时候都将当前的 traceId 放入 metadata 即可。
+现在我们已经知道了需要通过 `Traceparent` 请求头传递 trace 信息，那么我们可以继续编写 Python 下的 gRPC 客户端的拦截器了，在每次请求的时候都将当前的 trace 信息放入 metadata 即可。
+
+我们一般使用 Unary RPC 这种模式，所以拦截器也只实现这一种，其他拦截器的实现方式大同小异：
+
+```python
+class TraceUnaryUnaryClientInterceptor(UnaryUnaryClientInterceptor):
+    # 重写父类中的抽象函数，拦截客户端请求，加上 trace 的相关信息
+    def intercept_unary_unary(self, continuation, client_call_details, request):
+        # 先获取原有的 metadata
+        metadata = []
+        if client_call_details.metadata is not None:
+            metadata = list(client_call_details.metadata)
+
+        # 加上 trace 的相关信息
+        transaction = execution_context.get_transaction()
+        if transaction and transaction.trace_parent:
+            value = transaction.trace_parent.to_string()
+            metadata.append((constants.TRACEPARENT_HEADER_NAME, value))
+
+        # 生成最新的 details
+        new_details = _ClientCallDetails(
+            client_call_details.method,
+            client_call_details.timeout,
+            metadata,
+            client_call_details.credentials,
+            client_call_details.wait_for_ready,
+            client_call_details.compression,
+        )
+
+        return continuation(new_details, request)
+
+
+trace_unary_unary_client_interceptor = TraceUnaryUnaryClientInterceptor()
+```
+
+然后在我们需要使用时，拿到 channel 后调用 interceptor_channel 函数将其串起来即可：
+
+```python
+def hello(name: str) -> str:
+    with grpc.insecure_channel('host.docker.internal:50051') as channel:
+        # 获得待拦截器的 channel
+        channel = grpc.intercept_channel(channel, trace_unary_unary_client_interceptor)
+        stub = GinServiceStub(channel)
+        # 如果不想使用拦截器，也可以在调用的时候指定带 trace 信息的 metadata
+        response = stub.Hello(HelloRequest(name=name))
+
+    return response.message
+```
+
+### 测试
+
+假设我们的 hello 的 gRPC 服务端实现如下：
+
+```go
+func (*grpcServer) Hello(ctx context.Context, req *gingrpc.HelloRequest) (*gingrpc.HelloResponse, error) {
+    return &gingrpc.HelloResponse{
+        Message: fmt.Sprintf("Hello %s.", req.Name),
+    }, nil
+}
+```
+
+Django 中提供一个新的页面如下：
+
+```python
+# urls.py
+urlpatterns = [
+    ...
+    re_path(r'hello-with-grpc/(?P<username>\w+)/', views.hello_with_grpc),
+]
+
+# views.py
+def hello_with_grpc(request, username):
+    return HttpResponse(grpccli.service.hello(username))
+```
+
+此时我们访问路径 /hello-with-grpc/idealism/ 时，页面上就会显示 `Hello idealism.` 。
+
+我们再看看 Kibana 中的可视化情况：
+
+![Kibana Apm gRPC Django](img/Kibana%20Apm%20gRPC%20Django.png)
+
+可以看到该请求中有一个表示 gRPC 的 span ，而且它的 traceId 与当前请求的 traceId 一致。我们点击这一行，就会出现该 span 的详细信息：
+
+![Kibana Apm gRPC Django GinService](img/Kibana%20Apm%20gRPC%20Django%20GinService.png)
+
+详细信息就是我们在 gin-i18n 服务这边记录到的信息，点击上面的 `/gin.GinService/Hello` 就会跳到 gin-i18n 服务对应的追踪记录上。
+
+这就说明我们成功传递了 trace 信息，链路已经被串在一起了。目前没有其他组件，所以看起来比较单薄，但是只要连接处连上了，内部的其他组件按照自己的方式记录信息即可全部串在一起。
+
+## 通过 traceId 收集链路上的日志
+
+现在我们已经实现了 trace 信息传递了，可以很方便的知道某一条链路上的具体调用情况。我们还可以更进一步，做得更好，就是利用 traceId 将不同服务的日志收集在日志中心，需要的时候通过 traceId 查询即可。
+
+在 [golang-log-annotation](https://github.com/idealism-xxm/golang-log-annotation/blob/main/detail.md) 中，我提到了当时使用注释注解的方式在 Golang 中打印日志，避免侵入业务代码中。
+
+当时使用的就是 logrus 这个库用于打印日志，它支持通过 Hooks 的方式让我们在打印日志前做一些处理。我们就可以利用这种方式将 ctx 中的 trace 信息打印出来。
+
+而且 apm 官方库已经有相关的函数抽取当前 ctx 中的 trace 信息，我们可以直接在 Hooks 中放入 logrus 的 fields 中。
+
+```go
+func AddWithTraceInfoHook(logger *logrus.Logger) {
+    logger.Hooks.Add(&withTraceInfoHook{})
+}
+
+// 实现 logrus.Hook
+type withTraceInfoHook struct{}
+
+func (h *withTraceInfoHook) Levels() []logrus.Level {
+	return logrus.AllLevels
+}
+
+// 当要打印日志的时候，从 ctx 中获取 apm 的相关信息，放入 fields 中
+func (h *withTraceInfoHook) Fire(entry *logrus.Entry) error {
+	if entry.Context == nil {
+		return nil
+	}
+
+	// 从 apm 中获取更多信息，并放入 fields 中
+	fields := apmlogrus.TraceContext(entry.Context)
+	for key, value := range fields {
+		entry.Data[key] = value
+	}
+
+	return nil
+}
+```
+
+每次会放入当前 trace 的 traceId, transId 和 spanId ，并最终打印到日志中，可供我们在三个维度上查询需要的日志。
 
 ## 小结
 

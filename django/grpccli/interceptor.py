@@ -1,7 +1,7 @@
 from elasticapm.conf import constants
 from elasticapm.traces import execution_context
 from grpc import UnaryUnaryClientInterceptor
-from grpc import ClientCallDetails
+from grpc._interceptor import _ClientCallDetails
 
 
 class TraceUnaryUnaryClientInterceptor(UnaryUnaryClientInterceptor):
@@ -17,7 +17,8 @@ class TraceUnaryUnaryClientInterceptor(UnaryUnaryClientInterceptor):
             value = transaction.trace_parent.to_string()
             metadata.append((constants.TRACEPARENT_HEADER_NAME, value))
 
-        new_details = ClientCallDetails(
+        # 生成最新的 details
+        new_details = _ClientCallDetails(
             client_call_details.method,
             client_call_details.timeout,
             metadata,
@@ -26,7 +27,7 @@ class TraceUnaryUnaryClientInterceptor(UnaryUnaryClientInterceptor):
             client_call_details.compression,
         )
 
-        return method(request_or_iterator, new_details)
+        return continuation(new_details, request)
 
 
 trace_unary_unary_client_interceptor = TraceUnaryUnaryClientInterceptor()

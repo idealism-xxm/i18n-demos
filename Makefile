@@ -11,7 +11,7 @@ build-gin:
 	docker build -t idealism/gin-i18n gin
 
 run-gin:
-	docker run -ti -p 8080:8080 --name gin-i18n idealism/gin-i18n
+	docker run -ti -p 8080:8080 -p 50051:50051 --name gin-i18n idealism/gin-i18n
 
 gen-gin-grpc:
 	protoc --go_out=plugins=grpc:. *.proto
