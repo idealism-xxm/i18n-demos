@@ -2,13 +2,13 @@
 
 在 [Django i18n](django/demo%20(simple%20i18n).md) 和 [Gin i18n](gin/demo%20(simple%20i18n).md) 中分别介绍了如何在 Django 和 Gin 中实现国际化和本地化，但未涉及如何实现全链路国际化和本地化。
 
-要做到全链路，就需要将对应的信息进行跨服务传递，最常见的场景就是全链路追踪。本次将介绍如何通过 gRPC 在 Python 和 Golang 的服务间传递 trace 信息，从而实现全链路追踪。
+要做到全链路，就需要将对应的信息进行跨服务传递，最常见的场景就是全链路追踪。本次将先介绍如何通过 gRPC 在 Python 和 Golang 的服务间传递 trace 信息，从而实现全链路追踪。
 
 ## 搭建本地 eak 环境
 
 我们将使用 Elasticsearch + Apm + Kibana 进行演示，所以先需要搭建本地 eak 环境。
 
-对应的三个组件都支持 Docker 部署，所以我们可以直接使用一个如下的 `docker-compose-eak.yaml` 直接搭建完成。
+对应的三个组件都支持 Docker 部署，所以我们可以直接使用一个如下的 `eak.yaml` 直接搭建完成。
 
 ```yaml
 # 搭建 elasticsearch + apm + kibana 服务
@@ -86,7 +86,7 @@ poetry add elastic-apm
 make build-django
 ```
 
-此时我们可以在代码中进行配置了，修改 `settings.py` 文件中的如下内容（没有则添加）：：
+此时我们可以在代码中进行配置了，修改 `settings.py` 文件中的如下内容（没有则添加）：
 
 ```python
 # 添加代理对应的 app 到 installed apps 中
@@ -130,11 +130,11 @@ MIDDLEWARE = (
 
 然后访问 [Kibana 图形化界面](http://localhost:5601/app/apm/services) 即可看到我们配置好的服务已经采集到了：
 
-![Kibana Apm Services Django](img/Kibana%20Apm%20Services%20Django.png)
+![Kibana APM Services Django](img/Kibana%20APM%20Services%20Django.png)
 
 点击 django-i18n 即可查看 Django 服务采集的所有数据，我们刚刚访问的请求被全部采集到了：
 
-![Kibana Apm django-i18n](img/Kibana%20Apm%20django-i18n.png)
+![Kibana APM django-i18n](img/Kibana%20APM%20django-i18n.png)
 
 剩下的都是常见的一些操作，这里就先不展示了。 elastic-apm 的 Django 客户端已经能自动采集大部分我们会使用到的服务：mysql, redis, http 等。如果需要额外的采集信息，可以自己实现相关逻辑即可。
 
@@ -142,7 +142,9 @@ MIDDLEWARE = (
 
 Golang 中使用 APM 就不是那么简单了，虽然官方库提供了很多组件的客户端，但是有些组件的不同版本不兼容，需要自己重新实现对应的采集逻辑。
 
-常见组件的客户端基本都有，所以即使遇到版本不兼容的问题，也可以很轻易自定义使用版本的客户端，我们实际使用时就自定义了好几个组件对应版本的客户端。实现方式大同小异，要么直接使用组件自带的方式（中间件、拦截器、Hook 等）进行处理，要么封装一层进行处理。
+常见组件的客户端基本都有，所以即使遇到版本不兼容的问题，也可以很轻易自定义其他版本的客户端。我们实际使用时就自定义了好几个组件对应版本的客户端。
+
+实现方式大同小异，要么直接使用组件自带的方式（中间件、拦截器、Hook 等）进行处理，要么封装一层进行处理。
 
 Golang 中的 APM 通过环境变量的方式进行配置，增加以下必要的配置即可正常使用：
 
@@ -171,14 +173,14 @@ ELASTIC_APM_ENVIRONMENT=local
 func main() {
 	...
     r := gin.Default()
-    apmgin.Middleware(r)
+	r.Use(apmgin.Middleware(r))
     ...
 }
 ```
 
 这样配置完成后，我们就可以先访问 [Gin 服务](http://localhost:8080/hello/idealism/) 以便 APM 采集到数据。
 
-然后访问 [Apm gin-i18n](http://localhost:5601/app/apm/services/gin-i18n/overview) 即可查看收集到的数据：
+然后访问 [APM gin-i18n](http://localhost:5601/app/apm/services/gin-i18n/overview) 即可查看收集到的数据：
 
 ![Kibana APM gin-i18n](img/Kibana%20APM%20gin-i18n.png)
 
@@ -188,19 +190,19 @@ func main() {
 
 此时就需要全链路追踪技术，并且利用全链路追踪的 trace 信息，我们还可以一次将一条链路上的所有日志全部拉出来。我们可以同时结合链路上的追踪记录和日志，这样极大地提高排查问题的效率，找到问题所在。
 
-### 分析 Golang gRPC 的 Apm 客户端
+### 分析 Golang gRPC 的 APM 客户端
 
-Apm 官方库已经提供了 Golang 的 gRPC 的客户端，而尚未提供 Python 的 gRPC 的客户端，所以我们先分析 Golang gRPC 的 Apm 客户端，看看是如何传递 trace 信息的。
+APM 官方库已经提供了 Golang 的 gRPC 的客户端，而尚未提供 Python 的 gRPC 的客户端，所以我们先分析 Golang gRPC 的 APM 客户端，看看是如何传递 trace 信息的。
 
 ```go
 // go.elastic.co/apm/module/apmgrpc@v1.11.0/server.go:97
 func startTransaction(ctx context.Context, tracer *apm.Tracer, name string) (*apm.Transaction, context.Context) {
     var opts apm.TransactionOptions
     if md, ok := metadata.FromIncomingContext(ctx); ok {
-    	// elasticTraceparentHeader 的值为 Elastic-Apm-Traceparent
+        // elasticTraceparentHeader 的值为 Elastic-Apm-Traceparent
         traceContext, ok := getIncomingMetadataTraceContext(md, elasticTraceparentHeader)
         if !ok {
-        	// w3cTraceparentHeader 的值为 Traceparent
+            // w3cTraceparentHeader 的值为 Traceparent
             traceContext, _ = getIncomingMetadataTraceContext(md, w3cTraceparentHeader)
         }
         opts.TraceContext = traceContext
@@ -215,9 +217,9 @@ apmgrpc 会从 grpc 的 metadata 中获取获取 trace 的相关信息，优先�
 
 如果需要自定义其他的请求头名，可以使用 grpc_opentracing 提供的拦截器。
 
-### gRPC-go 服务端支持 apm
+### gRPC-go 服务端支持 APM
 
-想要让 gRPC 的 Golang 服务端支持 apm ，我们可以直接在创建新服务端实例时添加上 apmgrpc 的拦截器即可，这样所有通过 grpc 进来的请求都会自动集成请求中的 trace 信息，从而将不同服务间的链路串起来。
+想要让 gRPC 的 Golang 服务端支持 APM ，我们可以直接在创建新服务端实例时添加上 apmgrpc 的拦截器即可，这样所有通过 grpc 进来的请求都会自动集成请求中的 trace 信息，从而将不同服务间的链路串起来。
 
 ```go
 s := grpc.NewServer(
@@ -229,7 +231,7 @@ s := grpc.NewServer(
 )
 ```
 
-### 编写 gRPC-python 客户端的 Apm 拦截器
+### 编写 gRPC-python 客户端的 APM 拦截器
 
 现在我们已经知道了需要通过 `Traceparent` 请求头传递 trace 信息，那么我们可以继续编写 Python 下的 gRPC 客户端的拦截器了，在每次请求的时候都将当前的 trace 信息放入 metadata 即可。
 
@@ -310,25 +312,25 @@ def hello_with_grpc(request, username):
 
 我们再看看 Kibana 中的可视化情况：
 
-![Kibana Apm gRPC Django](img/Kibana%20Apm%20gRPC%20Django.png)
+![Kibana APM gRPC Django](img/Kibana%20APM%20gRPC%20Django.png)
 
 可以看到该请求中有一个表示 gRPC 的 span ，而且它的 traceId 与当前请求的 traceId 一致。我们点击这一行，就会出现该 span 的详细信息：
 
-![Kibana Apm gRPC Django GinService](img/Kibana%20Apm%20gRPC%20Django%20GinService.png)
+![Kibana APM gRPC Django GinService](img/Kibana%20APM%20gRPC%20Django%20GinService.png)
 
 详细信息就是我们在 gin-i18n 服务这边记录到的信息，点击上面的 `/gin.GinService/Hello` 就会跳到 gin-i18n 服务对应的追踪记录上。
 
 这就说明我们成功传递了 trace 信息，链路已经被串在一起了。目前没有其他组件，所以看起来比较单薄，但是只要连接处连上了，内部的其他组件按照自己的方式记录信息即可全部串在一起。
 
-## 通过 traceId 收集链路上的日志
+## 通过 trace 信息收集链路上的日志
 
-现在我们已经实现了 trace 信息传递了，可以很方便的知道某一条链路上的具体调用情况。我们还可以更进一步，做得更好，就是利用 traceId 将不同服务的日志收集在日志中心，需要的时候通过 traceId 查询即可。
+现在我们已经实现了 trace 信息传递了，可以很方便地知道某一条链路上的具体调用情况。我们还可以更进一步，做得更好，就是利用 traceId 将不同服务的日志收集在日志中心，需要的时候通过 traceId 查询即可。
 
 在 [golang-log-annotation](https://github.com/idealism-xxm/golang-log-annotation/blob/main/detail.md) 中，我提到了当时使用注释注解的方式在 Golang 中打印日志，避免侵入业务代码中。
 
-当时使用的就是 logrus 这个库用于打印日志，它支持通过 Hooks 的方式让我们在打印日志前做一些处理。我们就可以利用这种方式将 ctx 中的 trace 信息打印出来。
+当时使用的就是 logrus 这个库用于打印日志，它支持通过 Hook 的方式让我们在打印日志前做一些处理。我们就可以利用这种方式将 ctx 中的 trace 信息打印出来。
 
-而且 apm 官方库已经有相关的函数抽取当前 ctx 中的 trace 信息，我们可以直接在 Hooks 中放入 logrus 的 fields 中。
+而且 APM 官方库已经有相关的函数抽取当前 ctx 中的 trace 信息，我们可以直接在 Hooks 中放入 logrus 的 fields 中。
 
 ```go
 func AddWithTraceInfoHook(logger *logrus.Logger) {
@@ -342,13 +344,13 @@ func (h *withTraceInfoHook) Levels() []logrus.Level {
 	return logrus.AllLevels
 }
 
-// 当要打印日志的时候，从 ctx 中获取 apm 的相关信息，放入 fields 中
+// 当要打印日志的时候，从 ctx 中获取 trace 的相关信息，放入 fields 中
 func (h *withTraceInfoHook) Fire(entry *logrus.Entry) error {
 	if entry.Context == nil {
 		return nil
 	}
 
-	// 从 apm 中获取更多信息，并放入 fields 中
+	// 从 trace 中获取更多信息，并放入 fields 中
 	fields := apmlogrus.TraceContext(entry.Context)
 	for key, value := range fields {
 		entry.Data[key] = value
@@ -358,7 +360,26 @@ func (h *withTraceInfoHook) Fire(entry *logrus.Entry) error {
 }
 ```
 
-每次会放入当前 trace 的 traceId, transId 和 spanId ，并最终打印到日志中，可供我们在三个维度上查询需要的日志。
+每次会放入当前 trace 的 traceId, transactionId 和 spanId ，并最终打印到日志中，可供我们结合 APM 在三个维度上查询需要的日志。
+
+## Golang 使用 opentracing
+
+现在很多 Golang 库都支持 opentracing ，无需再显式接入 APM 。为了自动使用这一特性，我们需要设置 opentracing 的全局追踪器为 APM 适配的追踪器。这样只要一个库支持 opentracing ，或者有 APM 提供的客户端，那么我们都可以采集到对应的信息。
+
+使用方法也很简单，在进入 init 时直接设置一下即可（这个是全局的，设置一次即可）：
+
+```go
+func init() {
+    // opentracing 使用 apm 记录
+    opentracing.SetGlobalTracer(apmot.New())
+}
+```
 
 ## 小结
 
+本文主要讲解了如何在 Django 和 Golang 中使用 APM ，并实现了 gRPC 的全链路追踪，最后讲解了一下实现全链路日志，并提及了结合 APM 和全链路日志能有效提高排查效率。
+
+通过 gRPC 中的全链路追踪，我们已经理解了全链路的实现基本思想：传递需要的信息，以及如何在 Python 和 Golang 中实现这一逻辑。这样我们就可以很轻易地在微服务和任务上实现全链路国际化，甚至可以提供一个公共组件，供其他类似相关功能复用。
+
+下次将介绍微服务中使用拦截器实现的全链路国际化（语言翻译和本地时区），以及 Python 的 Celery 中使用装饰器实现的全链路国际化（语言翻译和本地时区）。
+ 
