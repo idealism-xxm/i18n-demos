@@ -16,7 +16,7 @@ func init() {
 }
 
 // TzMiddleware returns a gin middleware that
-// finds a best `*time.Location` for current request and adds it to context
+// finds the best `*time.Location` for current request and adds it to context
 func TzMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 1. 获取客户端指定的时区

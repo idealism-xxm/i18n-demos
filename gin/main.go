@@ -65,8 +65,17 @@ type grpcServer struct {
 }
 
 func (*grpcServer) Hello(ctx context.Context, req *gingrpc.HelloRequest) (*gingrpc.HelloResponse, error) {
+	// 从 context 中获取 languageTag 和 location
+	langaugeTag := i18n.LanguageTagFromContext(ctx)
+	location := LocationFromContext(ctx)
+	currentLanguage := i18n.CurrentLanguage(ctx, langaugeTag.String())
+	personCat := i18n.PersonCats(ctx, req.Name, 1)
+	personCats := i18n.PersonCats(ctx, req.Name, 2)
+	nowStr := time.Now().In(location).Format(time.RFC3339Nano)
+	timeStr := fmt.Sprintf("(%s) %s", location.String(), nowStr)
+	message := fmt.Sprintf("%v<br/>%v<br/>%v<br/>%v", currentLanguage, personCat, personCats, timeStr)
 	return &gingrpc.HelloResponse{
-		Message: fmt.Sprintf("Hello %s.", req.Name),
+		Message: message,
 	}, nil
 }
 
@@ -80,6 +89,8 @@ func startGrpcServer() {
 			grpc_recovery.UnaryServerInterceptor(),
 			grpc_ctxtags.UnaryServerInterceptor(),
 			apmgrpc.NewUnaryServerInterceptor(),
+			LanguageUnaryServerInterceptor,
+			TimezoneUnaryServerInterceptor,
 		),
 	)
 	gingrpc.RegisterGinServiceServer(s, &grpcServer{})

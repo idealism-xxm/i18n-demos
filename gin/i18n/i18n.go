@@ -54,3 +54,19 @@ func Localize(ctx context.Context, lc *i18n.LocalizeConfig) string {
 	}
 	return result
 }
+
+func WithLanguageAndTag(ctx context.Context, acceptLanguage string) context.Context {
+	// 1. 选择最适合的一个语言（方法和 go-i18n 自带第一步一致）
+	languageTags, _, _ := language.ParseAcceptLanguage(acceptLanguage)
+	supportedLanguages := bundle.LanguageTags()
+	_, index, _ := bundleMatcher.Match(languageTags...)
+	languageTag := supportedLanguages[index]
+
+	// 2. 新建一个最适配当前请求的本地化器
+	localizer := i18n.NewLocalizer(bundle, languageTag.String())
+
+	// 3. 放入 context 中，然后返回
+	ctx = WithLanguageTag(ctx, languageTag)
+	ctx = WithLocalizer(ctx, localizer)
+	return ctx
+}
