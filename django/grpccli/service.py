@@ -10,7 +10,7 @@ def hello(name: str) -> str:
         # 对 channel 应用所有拦截器
         channel = interceptor.intercept_channel_all(channel)
         stub = GinServiceStub(channel)
-        # 如果不想使用拦截器，也可以在调用的时候指定带 trace 信息的 metadata
+        # 如果不想使用拦截器，也可以在调用的时候指定所需信息的 metadata
         response = stub.Hello(HelloRequest(name=name))
 
     return response.message

@@ -10,6 +10,7 @@ from grpc import UnaryUnaryClientInterceptor
 from grpc._interceptor import _ClientCallDetails
 
 
+# 定义服务端从这些头中获取相应信息
 GRPC_HEADER_NAME_TIMEZONE = 'x-timezone'
 GRPC_HEADER_NAME_LANGUAGE = 'x-language'
 

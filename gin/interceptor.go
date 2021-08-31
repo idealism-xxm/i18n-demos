@@ -47,7 +47,7 @@ func TimezoneUnaryServerInterceptor(
 		}
 	}
 
-	// 获取时区 ctx 中
+	// 获取时区
 	location, err := time.LoadLocation(timezoneName)
 	if timezoneName == "" || err != nil {
 		// 没有指定时区 或者 出错，则使用默认时区
