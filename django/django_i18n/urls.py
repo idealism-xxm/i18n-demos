@@ -23,4 +23,6 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     re_path(r'hello/(?P<username>\w+)/', views.hello),
     re_path(r'hello-with-grpc/(?P<username>\w+)/', views.hello_with_grpc),
+    re_path(r'hello-with-celery-apply/(?P<username>\w+)/', views.hello_with_celery_apply),
+    re_path(r'hello-with-celery-apply-async/(?P<username>\w+)/', views.hello_with_celery_apply_async),
 ]

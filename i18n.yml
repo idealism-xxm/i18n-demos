@@ -1,0 +1,58 @@
+# 搭建 elasticsearch + apm + kibana 服务
+version: '3.6'
+services:
+  redis:
+    image: redis:6.2.5
+    container_name: redis
+    networks:
+      - i18n
+
+  django-i18n:
+    image: idealism/django-i18n
+    build:
+      context: ./django
+      dockerfile: Dockerfile
+    container_name: django-i18n
+    ports:
+      - 8000:8000
+    networks:
+      - i18n
+    depends_on:
+      - redis
+    volumes:
+      - ${PWD}/django:/idealism-xxm/django
+
+  celery-i18n:
+    image: idealism/django-i18n
+    build:
+      context: ./django
+      dockerfile: Dockerfile
+    container_name: django-i18n
+    networks:
+      - i18n
+    depends_on:
+      - redis
+    volumes:
+      - ${PWD}/django:/idealism-xxm/django
+    command:
+      - celery
+      - -A
+      - django_i18n
+      - worker
+      - -l
+      - info
+
+  gin-i18n:
+    image: idealism/gin-i18n
+    build:
+      context: ./gin
+      dockerfile: Dockerfile
+    container_name: gin-i18n
+    ports:
+      - 8080:8080
+      - 50051:50051
+    networks:
+      - i18n
+
+networks:
+  i18n: {}
